@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>zaney.daw ONLINE — multiplayer block DAW</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:#04050a; }
+  body { font-family:'Courier New', monospace; color:#cfd8e3; user-select:none; }
+  #gl { position:absolute; inset:0; display:block; }
+
+  #panel {
+    position:absolute; top:0; left:0; bottom:0; width:248px;
+    background:rgba(6,9,14,0.93); border-right:1px solid #14303a;
+    padding:12px; overflow-y:auto; z-index:10;
+  }
+  #panel::-webkit-scrollbar { width:6px; }
+  #panel::-webkit-scrollbar-thumb { background:#1d3a46; border-radius:3px; }
+  h1 { font-size:16px; color:#4df3ff; letter-spacing:2px; text-shadow:0 0 12px #0ff6; }
+  .sub { font-size:9px; color:#5a6b7a; margin-bottom:10px; }
+  .sec { font-size:9px; color:#7fdce8; letter-spacing:1.5px; margin:12px 0 5px; text-transform:uppercase; }
+
+  button {
+    font-family:inherit; font-size:10px; color:#cfd8e3; background:#0d1420;
+    border:1px solid #1d3a46; border-radius:4px; padding:5px 7px; cursor:pointer;
+  }
+  button:hover { border-color:#4df3ff; color:#4df3ff; }
+  button.active { background:#0e2e36; border-color:#4df3ff; color:#4df3ff; box-shadow:0 0 10px #0ff4 inset; }
+  button.rec-on { background:#3a1020; border-color:#ff4d6d; color:#ff4d6d; }
+
+  #transport { display:flex; gap:5px; }
+  #playBtn { flex:1; font-size:12px; padding:7px; }
+  #playBtn.playing { background:#3a1020; border-color:#ff4d6d; color:#ff4d6d; }
+
+  .row { display:flex; align-items:center; gap:5px; margin:4px 0; }
+  .row label { font-size:9px; color:#8fa3b5; width:46px; flex-shrink:0; }
+  .row input[type=range] { flex:1; accent-color:#4df3ff; height:12px; min-width:0; }
+  .row .val { font-size:9px; color:#4df3ff; width:40px; text-align:right; flex-shrink:0; }
+
+  #palette { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  .pal { display:flex; align-items:center; gap:5px; padding:4px 5px; text-align:left; overflow:hidden; }
+  .pal span.nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .swatch { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+
+  .busrow { display:flex; align-items:center; gap:4px; margin:3px 0; }
+  .busdot { width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+  .busrow .bname { font-size:9px; width:38px; color:#8fa3b5; }
+  .busrow button { padding:2px 6px; font-size:9px; }
+  .busrow button.mute-on { background:#3a1020; border-color:#ff4d6d; color:#ff4d6d; }
+  .busrow button.solo-on { background:#33300e; border-color:#ffd84d; color:#ffd84d; }
+  .busrow input[type=range] { flex:1; accent-color:#4df3ff; height:10px; min-width:0; }
+
+  #blockEd { border:1px solid #1d3a46; border-radius:6px; padding:7px; margin-top:3px; }
+  #blockEd.empty { opacity:0.35; pointer-events:none; }
+  #edTitle { font-size:10px; color:#ffd84d; margin-bottom:3px; }
+  #busPick, #modePick { display:flex; gap:3px; margin:4px 0; }
+  #busPick button, #modePick button { flex:1; padding:3px 2px; font-size:9px; }
+  #delBtn { width:100%; margin-top:5px; border-color:#5a2030; color:#ff8aa0; }
+  #delBtn:hover { border-color:#ff4d6d; color:#ff4d6d; }
+
+  .wide { width:100%; margin-top:4px; }
+
+  #toast {
+    position:absolute; left:calc(50% + 124px); bottom:24px; transform:translateX(-50%);
+    font-size:11px; color:#e8f6ff; background:rgba(10,20,28,0.92);
+    border:1px solid #1d3a46; border-radius:4px; padding:6px 14px;
+    opacity:0; transition:opacity .25s; pointer-events:none; z-index:20; white-space:nowrap;
+  }
+  #chunkLabel {
+    position:absolute; left:calc(50% + 124px); top:14px; transform:translateX(-50%);
+    font-size:12px; color:#4df3ff; text-shadow:0 0 10px #0ff8; z-index:5; pointer-events:none;
+    letter-spacing:1px;
+  }
+  #help {
+    position:absolute; right:12px; bottom:12px; font-size:9px; color:#546b7a;
+    text-align:right; line-height:1.7; z-index:5; pointer-events:none;
+  }
+  .kbd { color:#7fdce8; }
+  #dropHint {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(5,10,18,0.7); z-index:30; pointer-events:none;
+    font-size:20px; color:#4df3ff; text-shadow:0 0 20px #0ff;
+    border:2px dashed #4df3ff;
+  }
+  #chat { position:absolute; right:12px; top:12px; width:236px; z-index:15; font-size:10px; }
+  #chatLog div { background:rgba(8,14,20,0.78); border-left:2px solid #1d3a46; padding:2px 6px; margin-bottom:2px; transition:opacity 1.2s; word-wrap:break-word; }
+  #chatIn { width:100%; font-family:inherit; font-size:10px; color:#cfd8e3; background:rgba(10,16,24,0.85); border:1px solid #1d3a46; border-radius:3px; padding:4px 6px; outline:none; }
+  #chatIn:focus { border-color:#4df3ff; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="chunkLabel"></div>
+<div id="dropHint">drop audio files to add sound blocks</div>
+
+<div id="help">
+  <span class="kbd">WASD</span> walk &nbsp;·&nbsp; <span class="kbd">Q/E</span> rotate cam &nbsp;·&nbsp; <span class="kbd">scroll UI-off grid</span> zoom<br>
+  <span class="kbd">click</span> place / select &nbsp;·&nbsp; <span class="kbd">right-click</span> delete &nbsp;·&nbsp; <span class="kbd">shift+scroll</span> pitch selected<br>
+  <span class="kbd">space</span> play/stop &nbsp;·&nbsp; step inside a chunk to make it the live one<br>
+  blocks chained together = sequence · forks in the chain = branches playing in parallel
+</div>
+
+<div id="panel">
+  <h1>zaney.daw</h1>
+  <div class="sub">ONLINE · branching sequences · stems</div>
+  <div class="sec">Online</div>
+  <div id="netStatus" class="sub" style="margin:0 0 8px">connecting…</div>
+
+  <div id="transport">
+    <button id="playBtn">&#9654; PLAY</button>
+    <button id="clearBtn" title="clear active chunk">CLR</button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <label>BPM</label><input type="range" id="bpm" min="60" max="180" value="120"><span class="val" id="bpmVal">120</span>
+  </div>
+  <div class="row">
+    <label>Swing</label><input type="range" id="swing" min="0" max="60" value="0"><span class="val" id="swingVal">0%</span>
+  </div>
+
+  <div class="sec">World</div>
+  <button id="newChunkBtn" class="wide">+ GENERATE ADJACENT CHUNK</button>
+
+  <div class="sec">Buses <span style="color:#3d4d5c">(route · mute · solo)</span></div>
+  <div id="buses"></div>
+
+  <div class="sec">Sound blocks</div>
+  <div id="palette"></div>
+  <button id="recBtn" class="wide">&#9679; RECORD MIC → BLOCK</button>
+  <div class="sub" style="margin-top:4px">or drag &amp; drop .wav / .mp3 onto the world</div>
+
+  <div class="sec">Selected block</div>
+  <div id="blockEd" class="empty">
+    <div id="edTitle">no block selected</div>
+    <div class="row"><label>Pitch</label><input type="range" id="edPitch" min="-12" max="12" value="0"><span class="val" id="vPitch">0 st</span></div>
+    <div class="row"><label>Volume</label><input type="range" id="edVol" min="0" max="100" value="80"><span class="val" id="vVol">80</span></div>
+    <div class="row"><label>Pan</label><input type="range" id="edPan" min="-100" max="100" value="0"><span class="val" id="vPan">C</span></div>
+    <div class="row"><label>Reverb</label><input type="range" id="edRev" min="0" max="100" value="0"><span class="val" id="vRev">0</span></div>
+    <div class="row"><label>Nudge</label><input type="range" id="edNudge" min="-30" max="30" value="0"><span class="val" id="vNudge">0ms</span></div>
+    <div class="row"><label>EQ Lo</label><input type="range" id="edLo" min="-12" max="12" value="0"><span class="val" id="vLo">0dB</span></div>
+    <div class="row"><label>EQ Mid</label><input type="range" id="edMid" min="-12" max="12" value="0"><span class="val" id="vMid">0dB</span></div>
+    <div class="row"><label>EQ Hi</label><input type="range" id="edHi" min="-12" max="12" value="0"><span class="val" id="vHi">0dB</span></div>
+    <div id="busPick"></div>
+    <div id="modePick">
+      <button data-m="one">ONE-SHOT</button><button data-m="loop">LOOP</button>
+    </div>
+    <button id="delBtn">DELETE BLOCK</button>
+  </div>
+
+  <div class="sec">Export</div>
+  <div class="row">
+    <label>Bars</label><input type="range" id="exBars" min="1" max="16" value="4"><span class="val" id="vBars">4</span>
+  </div>
+  <button id="stemsBtn" class="wide">EXPORT MIX + STEMS (.wav)</button>
+  <button id="exportBtn" class="wide">SAVE MAP (.json)</button>
+  <input type="file" id="importFile" accept=".json" style="display:none">
+  <button id="importBtn" class="wide">LOAD MAP</button>
+</div>
+
+<div id="chat">
+  <div id="chatLog"></div>
+  <input id="chatIn" placeholder="chat with your homies… (enter)" maxlength="140">
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ==================================================================
+   zaney.daw 3D — walkable block-world DAW
+   chains of adjacent blocks = sequences; forks = parallel branches
+   ================================================================== */
+const CS = 16;                     // chunk size in cells
+const semi = n => Math.pow(2, n/12);
+const keyOf = (x,z) => x + ',' + z;
+
+const SOUNDS = [
+  { id:'kick',  name:'Kick',  color:'#ff4d6d' },
+  { id:'snare', name:'Snare', color:'#ffd84d' },
+  { id:'hat',   name:'HiHat', color:'#9be76a' },
+  { id:'clap',  name:'Clap',  color:'#ff9a4d' },
+  { id:'perc',  name:'Perc',  color:'#e07be0' },
+  { id:'bass',  name:'Bass',  color:'#4d7bff' },
+  { id:'pluck', name:'Pluck', color:'#4df3ff' },
+  { id:'lead',  name:'Lead',  color:'#b04dff' },
+  { id:'pad',   name:'Pad',   color:'#5affc3' },
+];
+const SAMPLES = [];  // {name, color, buffer}
+const SMP_COLORS = ['#ff7ab8','#7affd4','#ffe07a','#7a9dff','#ff9d7a','#c3ff7a'];
+
+function soundDef(id){
+  if (id.startsWith('smp')){
+    const s = SAMPLES[+id.slice(3)];
+    return s ? {name:s.name, color:s.color, custom:true} : {name:'missing', color:'#555', custom:true, missing:true};
+  }
+  return SOUNDS.find(s => s.id === id);
+}
+
+const BUSES = [
+  { name:'DRUMS', color:'#ff4d6d', vol:0.9, mute:false, solo:false },
+  { name:'BASS',  color:'#4d7bff', vol:0.9, mute:false, solo:false },
+  { name:'MELODY',color:'#4df3ff', vol:0.9, mute:false, solo:false },
+  { name:'FX',    color:'#5affc3', vol:0.9, mute:false, solo:false },
+];
+const defaultBus = id => ({kick:0,snare:0,hat:0,clap:0,perc:0}[id] !== undefined ? 0 : (id==='bass'?1:(id.startsWith('smp')?3:2)));
+
+// ---------------- world state ----------------
+const CHUNK_NAMES = ['robot lab','aquamarine','carpet','midnight','neon garden','glass city','dust bowl','signal hill','low tide','static field'];
+const CHUNK_COLORS = ['#4df3ff','#ff4d6d','#9be76a','#ffd84d','#e07be0','#5affc3','#ff9a4d','#b04dff'];
+let chunks = [];                  // {id,name,cx,cz,color,blocks:{key:block}}
+let chunkSeq = 0;
+function addChunk(cx, cz){
+  const c = { id:chunkSeq, name:CHUNK_NAMES[chunkSeq % CHUNK_NAMES.length],
+              cx, cz, color:CHUNK_COLORS[chunkSeq % CHUNK_COLORS.length], blocks:{} };
+  chunkSeq++;
+  chunks.push(c);
+  buildChunkVisual(c);
+  return c;
+}
+function chunkAt(wx, wz){
+  const cx = Math.floor(wx / CS), cz = Math.floor(wz / CS);
+  return chunks.find(c => c.cx === cx && c.cz === cz) || null;
+}
+function mkBlock(sound, opts={}){
+  return { sound, pitch:opts.pitch??0, vol:opts.vol??0.8, pan:0, rev:opts.rev??0,
+           nudge:0, lo:0, mid:0, hi:0, bus:opts.bus??defaultBus(sound), mode:'one' };
+}
+
+let curSound = 'kick';
+let selected = null;              // {chunk, k}
+let activeChunk = null;
+let bpm = 120, swing = 0, playing = false;
+
+// ---------------- pulse engine (branching sequencer) ----------------
+// A connected component of blocks (4-neighbour adjacency) is a sequence.
+// A pulse starts at the component's root, moves to unvisited neighbours each
+// step; several unvisited neighbours = the pulse SPLITS into parallel branches.
+// When every branch dies, the pulse restarts at the root → the loop.
+function components(blocks){
+  const keys = Object.keys(blocks), seen = new Set(), comps = [];
+  for (const k of keys){
+    if (seen.has(k)) continue;
+    const comp = [], q = [k]; seen.add(k);
+    while (q.length){
+      const cur = q.pop(); comp.push(cur);
+      const [x,z] = cur.split(',').map(Number);
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nk = keyOf(x+dx, z+dz);
+        if (blocks[nk] && !seen.has(nk)){ seen.add(nk); q.push(nk); }
+      }
+    }
+    comps.push(comp);
+  }
+  return comps;
+}
+function rootOf(comp){
+  return comp.slice().sort((a,b) => {
+    const [ax,az] = a.split(',').map(Number), [bx,bz] = b.split(',').map(Number);
+    return (az-bz) || (ax-bx);
+  })[0];
+}
+function mkPulseState(blocks){
+  return components(blocks).map(comp => ({
+    set: new Set(comp), root: rootOf(comp),
+    visited: null, heads: null,
+  }));
+}
+function stepPulses(state, blocks){
+  const trig = [];
+  for (const c of state){
+    if (!c.heads){ c.visited = new Set([c.root]); c.heads = [c.root]; trig.push(c.root); continue; }
+    const next = [];
+    for (const h of c.heads){
+      const [x,z] = h.split(',').map(Number);
+      for (const [dx,dz] of [[1,0],[0,1],[-1,0],[0,-1]]){
+        const nk = keyOf(x+dx, z+dz);
+        if (c.set.has(nk) && blocks[nk] && !c.visited.has(nk)){
+          c.visited.add(nk); next.push(nk);
+        }
+      }
+    }
+    if (next.length){ c.heads = next; trig.push(...next); }
+    else { c.visited = new Set([c.root]); c.heads = [c.root]; trig.push(c.root); }
+  }
+  return trig;
+}
+// pure simulation for offline stem rendering
+function simulateSteps(blocks, n){
+  const st = mkPulseState(blocks), out = [];
+  for (let i=0;i<n;i++) out.push(stepPulses(st, blocks));
+  return out;
+}
+let pulseState = null;
+function rebuildPulses(){ pulseState = activeChunk ? mkPulseState(activeChunk.blocks) : null; }
+
+// ---------------- audio ----------------
+let AC = null, LIVE = null;
+function makeGraph(ctx){
+  const master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
+  const conv = ctx.createConvolver();
+  const len = ctx.sampleRate * 2.2, imp = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch=0; ch<2; ch++){
+    const d = imp.getChannelData(ch);
+    for (let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, 2.6);
+  }
+  conv.buffer = imp;
+  const revIn = ctx.createGain(); revIn.gain.value = 0.9;
+  revIn.connect(conv); conv.connect(master);
+  const busGains = BUSES.map(() => { const g = ctx.createGain(); g.gain.value = 0.9; g.connect(master); return g; });
+  let nb = null;
+  return { ctx, master, revIn, busGains,
+    noise(){ if (nb) return nb;
+      nb = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const d = nb.getChannelData(0);
+      for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+      return nb; } };
+}
+function audio(){
+  if (AC) return AC;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  LIVE = makeGraph(AC);
+  syncBusGains();
+  return AC;
+}
+function syncBusGains(){
+  if (!LIVE) return;
+  const anySolo = BUSES.some(b => b.solo);
+  BUSES.forEach((b,i) => {
+    const audible = anySolo ? b.solo : !b.mute;
+    LIVE.busGains[i].gain.value = audible ? b.vol : 0;
+  });
+}
+// per-note chain: [src] → lo shelf → mid peak → hi shelf → vol → pan → bus (+ rev send)
+function chain(G, t, b){
+  const { ctx } = G;
+  const lo = ctx.createBiquadFilter(); lo.type='lowshelf'; lo.frequency.value=200; lo.gain.value=b.lo;
+  const mid = ctx.createBiquadFilter(); mid.type='peaking'; mid.frequency.value=1000; mid.Q.value=0.9; mid.gain.value=b.mid;
+  const hi = ctx.createBiquadFilter(); hi.type='highshelf'; hi.frequency.value=4200; hi.gain.value=b.hi;
+  const vol = ctx.createGain(); vol.gain.value = b.vol;
+  let tail = vol;
+  if (ctx.createStereoPanner){ const p = ctx.createStereoPanner(); p.pan.value = b.pan; vol.connect(p); tail = p; }
+  tail.connect(G.busGains[b.bus] || G.master);
+  if (b.rev > 0){ const s = ctx.createGain(); s.gain.value = b.rev; tail.connect(s); s.connect(G.revIn); }
+  lo.connect(mid); mid.connect(hi); hi.connect(vol);
+  return lo;
+}
+function env(ctx, g, t, a, d, peak=1){
+  g.gain.cancelScheduledValues(t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(peak, t+a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+a+d);
+}
+const SYNTH = {
+  kick(G,t,b){ const {ctx}=G; const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(160*semi(b.pitch),t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(30,42*semi(b.pitch)),t+0.11);
+    env(ctx,g,t,0.002,0.38,1.1); o.connect(g); g.connect(chain(G,t,b)); o.start(t); o.stop(t+0.5); },
+  snare(G,t,b){ const {ctx}=G;
+    const n=ctx.createBufferSource(); n.buffer=G.noise();
+    const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=1400;
+    const g=ctx.createGain(); env(ctx,g,t,0.001,0.16,0.8);
+    n.connect(f); f.connect(g); g.connect(chain(G,t,b));
+    const o=ctx.createOscillator(); o.type='triangle'; o.frequency.value=195*semi(b.pitch);
+    const g2=ctx.createGain(); env(ctx,g2,t,0.001,0.09,0.55);
+    o.connect(g2); g2.connect(chain(G,t,b));
+    n.start(t); n.stop(t+0.25); o.start(t); o.stop(t+0.15); },
+  hat(G,t,b){ const {ctx}=G; const n=ctx.createBufferSource(); n.buffer=G.noise();
+    const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=7000*semi(b.pitch/2);
+    const g=ctx.createGain(); env(ctx,g,t,0.001,0.045,0.5);
+    n.connect(f); f.connect(g); g.connect(chain(G,t,b)); n.start(t); n.stop(t+0.08); },
+  clap(G,t,b){ const {ctx}=G;
+    for (let i=0;i<3;i++){ const tt=t+i*0.011;
+      const n=ctx.createBufferSource(); n.buffer=G.noise();
+      const f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1800*semi(b.pitch); f.Q.value=1.4;
+      const g=ctx.createGain(); env(ctx,g,tt,0.001,i===2?0.18:0.03,0.6);
+      n.connect(f); f.connect(g); g.connect(chain(G,tt,b)); n.start(tt); n.stop(tt+0.25); } },
+  perc(G,t,b){ const {ctx}=G; const n=ctx.createBufferSource(); n.buffer=G.noise();
+    const f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=900*semi(b.pitch); f.Q.value=9;
+    const g=ctx.createGain(); env(ctx,g,t,0.001,0.12,0.9);
+    n.connect(f); f.connect(g); g.connect(chain(G,t,b)); n.start(t); n.stop(t+0.2); },
+  bass(G,t,b){ const {ctx}=G; const o=ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=65.41*semi(b.pitch);
+    const f=ctx.createBiquadFilter(); f.type='lowpass';
+    f.frequency.setValueAtTime(900,t); f.frequency.exponentialRampToValueAtTime(180,t+0.22);
+    const g=ctx.createGain(); env(ctx,g,t,0.004,0.26,0.75);
+    o.connect(f); f.connect(g); g.connect(chain(G,t,b)); o.start(t); o.stop(t+0.4); },
+  pluck(G,t,b){ const {ctx}=G; const o=ctx.createOscillator(); o.type='triangle'; o.frequency.value=261.6*semi(b.pitch);
+    const g=ctx.createGain(); env(ctx,g,t,0.002,0.22,0.6);
+    o.connect(g); g.connect(chain(G,t,b)); o.start(t); o.stop(t+0.3); },
+  lead(G,t,b){ const {ctx}=G; const o=ctx.createOscillator(); o.type='square'; o.frequency.value=523.25*semi(b.pitch);
+    const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=3200;
+    const g=ctx.createGain(); env(ctx,g,t,0.005,0.17,0.35);
+    o.connect(f); f.connect(g); g.connect(chain(G,t,b)); o.start(t); o.stop(t+0.25); },
+  pad(G,t,b){ const {ctx}=G;
+    [0,7].forEach((iv,i) => { const o=ctx.createOscillator(); o.type='sawtooth';
+      o.frequency.value=130.8*semi(b.pitch+iv); o.detune.value=i?6:-6;
+      const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1200;
+      const g=ctx.createGain(); env(ctx,g,t,0.05,0.55,0.22);
+      o.connect(f); f.connect(g); g.connect(chain(G,t,b)); o.start(t); o.stop(t+0.75); }); },
+};
+function trigger(G, t, b, stepDur){
+  const tt = Math.max(G.ctx.currentTime || 0, t + b.nudge/1000);
+  if (b.sound.startsWith('smp')){
+    const s = SAMPLES[+b.sound.slice(3)];
+    if (!s) return;
+    const src = G.ctx.createBufferSource(); src.buffer = s.buffer;
+    src.playbackRate.value = semi(b.pitch);
+    const g = G.ctx.createGain(); g.gain.value = 1;
+    src.connect(g); g.connect(chain(G, tt, b));
+    if (b.mode === 'loop'){
+      src.loop = true;
+      const dur = (stepDur||0.125) * 4; // loop fills one beat
+      g.gain.setValueAtTime(1, tt + dur - 0.02);
+      g.gain.linearRampToValueAtTime(0.0001, tt + dur);
+      src.start(tt); src.stop(tt + dur + 0.01);
+    } else {
+      src.start(tt);
+    }
+  } else {
+    const fn = SYNTH[b.sound];
+    if (fn) fn(G, tt, b);
+  }
+}
+
+// ---------------- transport / scheduler ----------------
+let nextNoteTime = 0, schedStep = 0;
+const flashQueue = [];
+function scheduler(){
+  if (!playing) return;
+  const stepDur = 60 / bpm / 4;
+  while (nextNoteTime < AC.currentTime + 0.12){
+    if (activeChunk && pulseState){
+      const cells = stepPulses(pulseState, activeChunk.blocks);
+      for (const k of cells){
+        const b = activeChunk.blocks[k];
+        if (b) trigger(LIVE, nextNoteTime, b, stepDur);
+      }
+      flashQueue.push({ when: nextNoteTime, chunk: activeChunk, keys: cells });
+    }
+    let d = stepDur;
+    if (swing > 0) d = (schedStep % 2 === 0) ? stepDur*(1+swing/100) : stepDur*(1-swing/100);
+    nextNoteTime += d; schedStep++;
+  }
+  setTimeout(scheduler, 25);
+}
+function togglePlay(){
+  audio(); if (AC.state === 'suspended') AC.resume();
+  playing = !playing;
+  if (playing){ rebuildPulses(); schedStep = 0; nextNoteTime = AC.currentTime + 0.06; scheduler(); }
+  playBtn.classList.toggle('playing', playing);
+  playBtn.innerHTML = playing ? '&#9632; STOP' : '&#9654; PLAY';
+}
+
+// ---------------- three.js scene ----------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04050a);
+scene.fog = new THREE.Fog(0x04050a, 40, 110);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+function resize(){ renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+scene.add(new THREE.AmbientLight(0x8899bb, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.75);
+sun.position.set(18, 30, 10); scene.add(sun);
+
+// stars
+{
+  const g = new THREE.BufferGeometry(), pts = [];
+  for (let i=0;i<700;i++){
+    const r = 130 + Math.random()*60, th = Math.random()*Math.PI*2, ph = Math.acos(Math.random()*2-1);
+    pts.push(r*Math.sin(ph)*Math.cos(th), Math.abs(r*Math.cos(ph))*0.7+4, r*Math.sin(ph)*Math.sin(th));
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xbfdfff, size:0.55, sizeAttenuation:true, transparent:true, opacity:0.8 })));
+}
+
+// grid texture for floors
+function gridTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0a0e18'; x.fillRect(0,0,512,512);
+  x.strokeStyle = 'rgba(110,150,190,0.28)'; x.lineWidth = 1;
+  for (let i=0;i<=16;i++){
+    const p = i*32 + 0.5;
+    x.beginPath(); x.moveTo(p,0); x.lineTo(p,512); x.stroke();
+    x.beginPath(); x.moveTo(0,p); x.lineTo(512,p); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+  return t;
+}
+const GRID_TEX = gridTexture();
+
+const chunkGroups = new Map();   // chunk.id -> {group, floor, border}
+const blockMeshes = new Map();   // chunk.id -> Map(key -> mesh)
+const boxGeo = new THREE.BoxGeometry(1,1,1);
+
+function buildChunkVisual(c){
+  const grp = new THREE.Group();
+  const ox = c.cx*CS, oz = c.cz*CS;
+  // floor
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(CS, CS),
+    new THREE.MeshBasicMaterial({ map: GRID_TEX, transparent:true, opacity:0.9 }));
+  floor.rotation.x = -Math.PI/2;
+  floor.position.set(ox + CS/2, 0, oz + CS/2);
+  floor.userData.chunk = c;
+  grp.add(floor);
+  // neon border: 4 slim boxes
+  const bm = new THREE.MeshBasicMaterial({ color: new THREE.Color(c.color) });
+  const mk = (w,d,x,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,0.14,d), bm.clone()); m.position.set(x,0.07,z); grp.add(m); return m; };
+  const border = [
+    mk(CS+0.24, 0.24, ox+CS/2, oz-0.0),
+    mk(CS+0.24, 0.24, ox+CS/2, oz+CS),
+    mk(0.24, CS+0.24, ox, oz+CS/2),
+    mk(0.24, CS+0.24, ox+CS, oz+CS/2),
+  ];
+  scene.add(grp);
+  chunkGroups.set(c.id, { group: grp, floor, border });
+  blockMeshes.set(c.id, new Map());
+}
+function setChunkLit(c, lit){
+  const v = chunkGroups.get(c.id); if (!v) return;
+  v.border.forEach(m => { m.material.color.set(c.color); m.material.color.multiplyScalar(lit ? 1 : 0.28); });
+  v.floor.material.opacity = lit ? 0.95 : 0.5;
+}
+
+function blockHeight(b){ return 0.45 + (b.pitch + 12) / 24 * 1.4; }
+function addBlockMesh(c, k, b){
+  const [x,z] = k.split(',').map(Number);
+  const def = soundDef(b.sound);
+  const h = blockHeight(b);
+  const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(def.color) });
+  mat.emissive = new THREE.Color(def.color); mat.emissiveIntensity = 0.12;
+  const m = new THREE.Mesh(boxGeo, mat);
+  m.scale.set(0.82, h, 0.82);
+  m.position.set(c.cx*CS + x + 0.5, h/2, c.cz*CS + z + 0.5);
+  m.userData = { chunk: c, k, flash: 0 };
+  scene.add(m);
+  blockMeshes.get(c.id).set(k, m);
+}
+function removeBlockMesh(c, k){
+  const map = blockMeshes.get(c.id), m = map && map.get(k);
+  if (m){ scene.remove(m); m.material.dispose(); map.delete(k); }
+}
+function refreshBlockMesh(c, k){
+  const b = c.blocks[k], map = blockMeshes.get(c.id), m = map.get(k);
+  if (!b || !m) return;
+  const h = blockHeight(b);
+  m.scale.y = h; m.position.y = h/2;
+  const def = soundDef(b.sound);
+  m.material.color.set(def.color); m.material.emissive.set(def.color);
+}
+
+// hover marker + selection ring
+const hoverMk = new THREE.Mesh(new THREE.PlaneGeometry(0.95,0.95),
+  new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.16, side:THREE.DoubleSide }));
+hoverMk.rotation.x = -Math.PI/2; hoverMk.position.y = 0.02; hoverMk.visible = false; scene.add(hoverMk);
+const selMk = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 4),
+  new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.9, side:THREE.DoubleSide }));
+selMk.rotation.x = -Math.PI/2; selMk.rotation.z = Math.PI/4; selMk.visible = false; scene.add(selMk);
+
+// player
+const player = new THREE.Group();
+const pBody = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0xffd23d, emissive: 0xffd23d, emissiveIntensity: 0.35 }));
+pBody.scale.set(0.55, 1.15, 0.55); pBody.position.y = 0.58;
+player.add(pBody); scene.add(player);
+let pTarget = new THREE.Vector3(CS/2 + 0.5, 0, CS/2 + 0.5);
+player.position.copy(pTarget);
+
+// camera rig
+let camYaw = Math.PI/4, camDist = 22, camPitch = 0.62;
+function camOffset(){
+  return new THREE.Vector3(Math.sin(camYaw)*Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw)*Math.cos(camPitch)).multiplyScalar(camDist);
+}
+
+// first chunk + starter groove
+{
+  const c0 = addChunk(0, 0);
+  const B = c0.blocks;
+  // kick chain (4-step loop)
+  B[keyOf(2,12)] = mkBlock('kick');  B[keyOf(3,12)] = mkBlock('hat',{vol:0.4});
+  B[keyOf(4,12)] = mkBlock('snare'); B[keyOf(5,12)] = mkBlock('hat',{vol:0.4});
+  // branch off the snare: a perc fork playing in parallel
+  B[keyOf(4,11)] = mkBlock('perc',{pitch:4, rev:0.3});
+  // bass loop (8-step)
+  B[keyOf(2,9)] = mkBlock('bass',{pitch:-5}); B[keyOf(3,9)] = mkBlock('bass',{pitch:-5});
+  B[keyOf(4,9)] = mkBlock('bass',{pitch:-2}); B[keyOf(5,9)] = mkBlock('bass',{pitch:-7});
+  B[keyOf(6,9)] = mkBlock('bass',{pitch:-7}); B[keyOf(7,9)] = mkBlock('bass',{pitch:-3});
+  B[keyOf(8,9)] = mkBlock('bass',{pitch:-2}); B[keyOf(9,9)] = mkBlock('bass',{pitch:0});
+  // melody with a branch
+  B[keyOf(3,5)] = mkBlock('pluck',{pitch:0, rev:0.35}); B[keyOf(4,5)] = mkBlock('pluck',{pitch:3, rev:0.35});
+  B[keyOf(5,5)] = mkBlock('pluck',{pitch:7, rev:0.35}); B[keyOf(6,5)] = mkBlock('pluck',{pitch:5, rev:0.35});
+  B[keyOf(5,4)] = mkBlock('lead',{pitch:12, rev:0.5});  // fork!
+  Object.keys(B).forEach(k => addBlockMesh(c0, k, B[k]));
+}
+
+// ---------------- picking / input ----------------
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoverCell = null; // {chunk, x, z}
+
+function pickAt(clientX, clientY){
+  mouse.x = (clientX/innerWidth)*2 - 1;
+  mouse.y = -(clientY/innerHeight)*2 + 1;
+  ray.setFromCamera(mouse, camera);
+  // blocks first
+  const meshes = [];
+  blockMeshes.forEach(map => map.forEach(m => meshes.push(m)));
+  let hit = ray.intersectObjects(meshes)[0];
+  if (hit){
+    const { chunk, k } = hit.object.userData;
+    const [x,z] = k.split(',').map(Number);
+    return { chunk, x, z, isBlock:true };
+  }
+  const floors = [];
+  chunkGroups.forEach(v => floors.push(v.floor));
+  hit = ray.intersectObjects(floors)[0];
+  if (hit){
+    const c = hit.object.userData.chunk;
+    const lx = Math.floor(hit.point.x - c.cx*CS), lz = Math.floor(hit.point.z - c.cz*CS);
+    if (lx>=0 && lx<CS && lz>=0 && lz<CS) return { chunk:c, x:lx, z:lz, isBlock:false };
+  }
+  return null;
+}
+
+const cv = renderer.domElement;
+cv.addEventListener('mousemove', e => {
+  const p = pickAt(e.clientX, e.clientY);
+  hoverCell = p;
+  hoverMk.visible = !!p;
+  if (p) hoverMk.position.set(p.chunk.cx*CS + p.x + 0.5, 0.03, p.chunk.cz*CS + p.z + 0.5);
+});
+cv.addEventListener('click', e => {
+  audio(); if (AC.state==='suspended') AC.resume();
+  const p = pickAt(e.clientX, e.clientY);
+  if (!p){ select(null); return; }
+  const k = keyOf(p.x, p.z);
+  if (p.chunk.blocks[k]){
+    select({ chunk:p.chunk, k });
+    if (!playing) trigger(LIVE, AC.currentTime, p.chunk.blocks[k], 60/bpm/4);
+  } else {
+    const b = mkBlock(curSound);
+    p.chunk.blocks[k] = b;
+    addBlockMesh(p.chunk, k, b);
+    NET.place(p.chunk, k, b);
+    select({ chunk:p.chunk, k });
+    if (p.chunk === activeChunk) rebuildPulses();
+    if (!playing) trigger(LIVE, AC.currentTime, b, 60/bpm/4);
+    toast(soundDef(curSound).name + ' placed at (' + p.x + ', ' + p.z + ')');
+  }
+});
+cv.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const p = pickAt(e.clientX, e.clientY);
+  if (!p) return;
+  const k = keyOf(p.x, p.z);
+  if (p.chunk.blocks[k]){
+    delete p.chunk.blocks[k];
+    removeBlockMesh(p.chunk, k);
+    NET.del(p.chunk, k);
+    if (selected && selected.chunk===p.chunk && selected.k===k) select(null);
+    if (p.chunk === activeChunk) rebuildPulses();
+    toast('deleted block');
+  }
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.shiftKey && selected){
+    const b = selected.chunk.blocks[selected.k];
+    if (!b) return;
+    b.pitch = Math.max(-12, Math.min(12, b.pitch + (e.deltaY < 0 ? 1 : -1)));
+    refreshBlockMesh(selected.chunk, selected.k);
+    syncEditor();
+    toast('Transpose: ' + (b.pitch>0?'+':'') + b.pitch + ' st');
+    if (!playing){ audio(); trigger(LIVE, AC.currentTime, b, 60/bpm/4); }
+  } else {
+    camDist = Math.max(8, Math.min(55, camDist + (e.deltaY > 0 ? 2 : -2)));
+  }
+}, { passive:false });
+
+// movement
+const keys = {};
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space'){ e.preventDefault(); togglePlay(); return; }
+  if (e.key === 'q' || e.key === 'Q') camYaw += Math.PI/4;
+  if (e.key === 'e' || e.key === 'E') camYaw -= Math.PI/4;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected){
+    const { chunk, k } = selected;
+    delete chunk.blocks[k]; removeBlockMesh(chunk, k); NET.del(chunk, k); select(null);
+    if (chunk === activeChunk) rebuildPulses();
+  }
+  keys[e.key.toLowerCase()] = true;
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+let lastMove = 0;
+function tryMove(now){
+  if (now - lastMove < 130) return;
+  let dx = 0, dz = 0;
+  // camera-relative: forward = away from camera
+  const fwd = camOffset().multiplyScalar(-1); fwd.y = 0; fwd.normalize();
+  const rgt = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  if (keys['w'] || keys['arrowup'])    { dx += fwd.x; dz += fwd.z; }
+  if (keys['s'] || keys['arrowdown'])  { dx -= fwd.x; dz -= fwd.z; }
+  if (keys['d'] || keys['arrowright']) { dx += rgt.x; dz += rgt.z; }
+  if (keys['a'] || keys['arrowleft'])  { dx -= rgt.x; dz -= rgt.z; }
+  if (!dx && !dz) return;
+  const sx = Math.abs(dx) > Math.abs(dz) ? Math.sign(dx) : 0;
+  const sz = sx === 0 ? Math.sign(dz) : 0;
+  pTarget.x += sx; pTarget.z += sz;
+  lastMove = now;
+}
+
+// active chunk from player position
+function updateActiveChunk(){
+  const c = chunkAt(Math.floor(player.position.x), Math.floor(player.position.z));
+  if (c !== activeChunk){
+    activeChunk = c;
+    rebuildPulses();
+    chunks.forEach(ch => setChunkLit(ch, ch === activeChunk));
+    document.getElementById('chunkLabel').textContent =
+      activeChunk ? ('CHUNK · ' + activeChunk.name.toUpperCase()) : 'THE VOID — step into a chunk';
+    if (activeChunk) toast('entered "' + activeChunk.name + '" — other chunks are silent');
+  }
+}
+chunks.forEach(ch => setChunkLit(ch, false));
+
+// generate adjacent chunk
+document.getElementById('newChunkBtn').onclick = () => {
+  const base = activeChunk || chunks[0];
+  const dirs = [[1,0],[0,1],[-1,0],[0,-1]];
+  for (const [dx,dz] of dirs){
+    const cx = base.cx+dx, cz = base.cz+dz;
+    if (!chunks.find(c => c.cx===cx && c.cz===cz)){
+      if (NET.online()){ NET.newChunk(cx, cz); }
+      else {
+        const c = addChunk(cx, cz);
+        setChunkLit(c, false);
+        toast('generated chunk "' + c.name + '" — walk over and step inside');
+      }
+      return;
+    }
+  }
+  toast('all four sides occupied — walk to an edge chunk first');
+};
+
+// ---------------- render loop ----------------
+const clock = new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  tryMove(now);
+  player.position.lerp(pTarget, 0.18);
+  pBody.rotation.y += 0.01;
+  updateActiveChunk();
+
+  // camera follow
+  const co = camOffset();
+  camera.position.lerp(new THREE.Vector3().addVectors(player.position, co), 0.08);
+  camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+
+  // consume flashes
+  if (AC){
+    while (flashQueue.length && flashQueue[0].when <= AC.currentTime){
+      const f = flashQueue.shift();
+      const map = blockMeshes.get(f.chunk.id);
+      if (map) f.keys.forEach(k => { const m = map.get(k); if (m) m.userData.flash = 1; });
+    }
+  }
+  blockMeshes.forEach(map => map.forEach(m => {
+    if (m.userData.flash > 0.01){
+      m.material.emissiveIntensity = 0.12 + m.userData.flash * 1.4;
+      const s = 1 + m.userData.flash * 0.18;
+      m.scale.x = 0.82 * s; m.scale.z = 0.82 * s;
+      m.userData.flash *= 0.86;
+    } else if (m.material.emissiveIntensity !== 0.12){
+      m.material.emissiveIntensity = 0.12; m.scale.x = 0.82; m.scale.z = 0.82;
+    }
+  }));
+
+  // selection marker
+  if (selected && selected.chunk.blocks[selected.k]){
+    const [x,z] = selected.k.split(',').map(Number);
+    selMk.visible = true;
+    selMk.position.set(selected.chunk.cx*CS + x + 0.5, 0.05, selected.chunk.cz*CS + z + 0.5);
+    selMk.rotation.z += 0.01;
+  } else selMk.visible = false;
+
+  renderer.render(scene, camera);
+}
+loop();
+
+// ---------------- UI wiring ----------------
+const playBtn = document.getElementById('playBtn');
+playBtn.onclick = togglePlay;
+document.getElementById('clearBtn').onclick = () => {
+  if (!activeChunk) return toast('stand inside a chunk to clear it');
+  Object.keys(activeChunk.blocks).forEach(k => removeBlockMesh(activeChunk, k));
+  activeChunk.blocks = {}; select(null); rebuildPulses();
+  NET.clear(activeChunk);
+  toast('chunk "' + activeChunk.name + '" cleared');
+};
+const bpmIn = document.getElementById('bpm');
+bpmIn.oninput = () => { bpm = +bpmIn.value; document.getElementById('bpmVal').textContent = bpm; NET.set({ bpm }); };
+const swIn = document.getElementById('swing');
+swIn.oninput = () => { swing = +swIn.value; document.getElementById('swingVal').textContent = swing + '%'; NET.set({ swing }); };
+
+// buses UI
+const busesEl = document.getElementById('buses');
+function buildBusUI(){
+  busesEl.innerHTML = '';
+  BUSES.forEach((b,i) => {
+    const row = document.createElement('div'); row.className = 'busrow';
+    row.innerHTML = `<span class="busdot" style="background:${b.color}; box-shadow:0 0 5px ${b.color}"></span>
+      <span class="bname">${b.name}</span>
+      <button class="mBtn ${b.mute?'mute-on':''}">M</button>
+      <button class="sBtn ${b.solo?'solo-on':''}">S</button>
+      <input type="range" min="0" max="100" value="${Math.round(b.vol*100)}">`;
+    row.querySelector('.mBtn').onclick = ev => { b.mute = !b.mute; ev.target.classList.toggle('mute-on', b.mute); syncBusGains(); };
+    row.querySelector('.sBtn').onclick = ev => { b.solo = !b.solo; ev.target.classList.toggle('solo-on', b.solo); syncBusGains(); };
+    row.querySelector('input').oninput = ev => { b.vol = ev.target.value/100; syncBusGains(); };
+    busesEl.appendChild(row);
+  });
+}
+buildBusUI();
+
+// palette
+const palEl = document.getElementById('palette');
+function palBtn(id, name, color){
+  const btn = document.createElement('button');
+  btn.className = 'pal' + (id === curSound ? ' active' : '');
+  btn.dataset.snd = id;
+  btn.innerHTML = `<span class="swatch" style="background:${color}; box-shadow:0 0 6px ${color}"></span><span class="nm">${name}</span>`;
+  btn.onclick = () => {
+    curSound = id;
+    palEl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    audio(); if (AC.state==='suspended') AC.resume();
+    if (!playing) trigger(LIVE, AC.currentTime, mkBlock(id), 60/bpm/4);
+  };
+  palEl.appendChild(btn);
+}
+SOUNDS.forEach(s => palBtn(s.id, s.name, s.color));
+function addSample(name, buffer, raw, mime, fromNet){
+  const idx = SAMPLES.length;
+  const color = SMP_COLORS[idx % SMP_COLORS.length];
+  SAMPLES.push({ name, color, buffer });
+  palBtn('smp'+idx, name, color);
+  curSound = 'smp'+idx;
+  palEl.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.snd === curSound));
+  if (!fromNet && raw) NET.sample(name, raw, mime || 'audio/wav');
+  toast('sample "' + name + '" ready — click the grid to place it');
+}
+
+// drag & drop audio
+const dropHint = document.getElementById('dropHint');
+addEventListener('dragover', e => { e.preventDefault(); dropHint.style.display = 'flex'; });
+addEventListener('dragleave', e => { if (!e.relatedTarget) dropHint.style.display = 'none'; });
+addEventListener('drop', async e => {
+  e.preventDefault(); dropHint.style.display = 'none';
+  audio(); if (AC.state==='suspended') AC.resume();
+  for (const f of e.dataTransfer.files){
+    if (!f.type.startsWith('audio') && !/\.(wav|mp3|ogg|m4a|aiff?|flac)$/i.test(f.name)) continue;
+    try {
+      const bytes = await f.arrayBuffer();
+      const buf = await AC.decodeAudioData(bytes.slice(0));
+      addSample(f.name.replace(/\.[^.]+$/,'').slice(0,14), buf, bytes, f.type);
+    } catch { toast('could not decode ' + f.name); }
+  }
+});
+
+// mic recording
+let mediaRec = null, recChunks = [];
+document.getElementById('recBtn').onclick = async function(){
+  audio(); if (AC.state==='suspended') AC.resume();
+  if (mediaRec && mediaRec.state === 'recording'){ mediaRec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    recChunks = [];
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = e => recChunks.push(e.data);
+    mediaRec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      this.classList.remove('rec-on'); this.innerHTML = '&#9679; RECORD MIC → BLOCK';
+      try {
+        const blob = new Blob(recChunks);
+        const bytes = await blob.arrayBuffer();
+        const buf = await AC.decodeAudioData(bytes.slice(0));
+        addSample('mic take ' + (SAMPLES.filter(s=>s.name.startsWith('mic')).length+1), buf, bytes, blob.type);
+      } catch { toast('could not decode recording'); }
+    };
+    mediaRec.start();
+    this.classList.add('rec-on'); this.innerHTML = '&#9632; STOP RECORDING';
+    toast('recording… click again to stop');
+  } catch { toast('microphone access denied'); }
+};
+
+// block editor
+const ed = document.getElementById('blockEd'), edTitle = document.getElementById('edTitle');
+const sliders = {
+  edPitch:['pitch', v => (v>0?'+':'')+v+' st', 'vPitch', 1],
+  edVol:['vol', v => Math.round(v*100), 'vVol', 0.01],
+  edPan:['pan', v => v===0?'C':(v<0?'L'+Math.round(-v*100):'R'+Math.round(v*100)), 'vPan', 0.01],
+  edRev:['rev', v => Math.round(v*100), 'vRev', 0.01],
+  edNudge:['nudge', v => v+'ms', 'vNudge', 1],
+  edLo:['lo', v => v+'dB', 'vLo', 1],
+  edMid:['mid', v => v+'dB', 'vMid', 1],
+  edHi:['hi', v => v+'dB', 'vHi', 1],
+};
+const busPick = document.getElementById('busPick');
+BUSES.forEach((b,i) => {
+  const btn = document.createElement('button');
+  btn.textContent = b.name; btn.dataset.bus = i;
+  btn.onclick = () => { const bl = selBlock(); if (bl){ bl.bus = i; syncEditor(); NET.updSel(); } };
+  busPick.appendChild(btn);
+});
+document.querySelectorAll('#modePick button').forEach(btn => {
+  btn.onclick = () => { const bl = selBlock(); if (bl){ bl.mode = btn.dataset.m; syncEditor(); NET.updSel(); } };
+});
+function selBlock(){ return selected ? selected.chunk.blocks[selected.k] : null; }
+function select(p){
+  selected = (p && p.chunk.blocks[p.k]) ? p : null;
+  syncEditor();
+}
+function syncEditor(){
+  const b = selBlock();
+  if (!b){ ed.classList.add('empty'); edTitle.textContent = 'no block selected'; return; }
+  ed.classList.remove('empty');
+  edTitle.textContent = soundDef(b.sound).name + ' @ ' + selected.k + ' · ' + selected.chunk.name;
+  for (const [id,[prop,fmt,valId,scale]] of Object.entries(sliders)){
+    document.getElementById(id).value = b[prop] / scale;
+    document.getElementById(valId).textContent = fmt(b[prop]);
+  }
+  busPick.querySelectorAll('button').forEach((btn,i) => btn.classList.toggle('active', i === b.bus));
+  const isSmp = b.sound.startsWith('smp');
+  document.getElementById('modePick').style.display = isSmp ? 'flex' : 'none';
+  document.querySelectorAll('#modePick button').forEach(btn => btn.classList.toggle('active', btn.dataset.m === b.mode));
+}
+for (const [id,[prop,fmt,valId,scale]] of Object.entries(sliders)){
+  document.getElementById(id).oninput = e => {
+    const b = selBlock(); if (!b) return;
+    b[prop] = e.target.value * scale;
+    if (prop === 'pitch'){ b[prop] = Math.round(b[prop]); refreshBlockMesh(selected.chunk, selected.k); }
+    document.getElementById(valId).textContent = fmt(b[prop]);
+    NET.updSel();
+  };
+}
+document.getElementById('edPitch').onchange = () => {
+  const b = selBlock(); if (b && !playing){ audio(); trigger(LIVE, AC.currentTime, b, 60/bpm/4); }
+};
+document.getElementById('delBtn').onclick = () => {
+  if (!selected) return;
+  const { chunk, k } = selected;
+  delete chunk.blocks[k]; removeBlockMesh(chunk, k); NET.del(chunk, k); select(null);
+  if (chunk === activeChunk) rebuildPulses();
+  toast('deleted block');
+};
+
+// ---------------- stems export ----------------
+function encodeWav(buffer){
+  const nCh = buffer.numberOfChannels, len = buffer.length, sr = buffer.sampleRate;
+  const bytes = 44 + len * nCh * 2;
+  const ab = new ArrayBuffer(bytes), dv = new DataView(ab);
+  const wstr = (o,s) => { for (let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); };
+  wstr(0,'RIFF'); dv.setUint32(4, bytes-8, true); wstr(8,'WAVE');
+  wstr(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,nCh,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*2,true); dv.setUint16(32,nCh*2,true); dv.setUint16(34,16,true);
+  wstr(36,'data'); dv.setUint32(40, len*nCh*2, true);
+  const chans = []; for (let c=0;c<nCh;c++) chans.push(buffer.getChannelData(c));
+  let o = 44;
+  for (let i=0;i<len;i++) for (let c=0;c<nCh;c++){
+    const s = Math.max(-1, Math.min(1, chans[c][i]));
+    dv.setInt16(o, s < 0 ? s*0x8000 : s*0x7FFF, true); o += 2;
+  }
+  return new Blob([ab], { type:'audio/wav' });
+}
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function renderStem(blocks, busFilter, bars){
+  const steps = bars * 16, stepDur = 60/bpm/4;
+  // pre-compute swung step times
+  const times = []; let t = 0.05;
+  for (let s=0;s<steps;s++){
+    times.push(t);
+    t += swing > 0 ? (s%2===0 ? stepDur*(1+swing/100) : stepDur*(1-swing/100)) : stepDur;
+  }
+  const dur = t + 2.5;
+  const octx = new OfflineAudioContext(2, Math.ceil(dur*44100), 44100);
+  const G = makeGraph(octx);
+  BUSES.forEach((b,i) => G.busGains[i].gain.value = b.vol);
+  const sim = simulateSteps(blocks, steps);
+  for (let s=0;s<steps;s++){
+    for (const k of sim[s]){
+      const b = blocks[k];
+      if (!b) continue;
+      if (busFilter !== null && b.bus !== busFilter) continue;
+      trigger(G, times[s], b, stepDur);
+    }
+  }
+  return octx.startRendering();
+}
+document.getElementById('exBars').oninput = e => document.getElementById('vBars').textContent = e.target.value;
+document.getElementById('stemsBtn').onclick = async function(){
+  if (!activeChunk || !Object.keys(activeChunk.blocks).length)
+    return toast('stand inside a chunk that has blocks');
+  audio();
+  const bars = +document.getElementById('exBars').value;
+  const name = activeChunk.name.replace(/\s+/g,'-');
+  this.disabled = true; this.textContent = 'RENDERING…';
+  try {
+    const mix = await renderStem(activeChunk.blocks, null, bars);
+    download(encodeWav(mix), 'zaney-' + name + '-mix.wav');
+    const used = new Set(Object.values(activeChunk.blocks).map(b => b.bus));
+    for (const i of used){
+      const stem = await renderStem(activeChunk.blocks, i, bars);
+      download(encodeWav(stem), 'zaney-' + name + '-' + BUSES[i].name.toLowerCase() + '.wav');
+    }
+    toast('exported mix + ' + used.size + ' stem(s) · ' + bars + ' bars @ ' + bpm + ' bpm');
+  } catch(err){ toast('render failed: ' + err.message); }
+  this.disabled = false; this.textContent = 'EXPORT MIX + STEMS (.wav)';
+};
+
+// ---------------- save / load ----------------
+document.getElementById('exportBtn').onclick = () => {
+  const data = {
+    version: 2, bpm, swing,
+    buses: BUSES.map(b => ({ vol:b.vol, mute:b.mute, solo:b.solo })),
+    sampleNames: SAMPLES.map(s => s.name),
+    chunks: chunks.map(c => ({ name:c.name, cx:c.cx, cz:c.cz, color:c.color, blocks:c.blocks })),
+  };
+  download(new Blob([JSON.stringify(data)], { type:'application/json' }), 'zaney-map.json');
+  toast('map saved (samples are not embedded — re-drop audio after loading)');
+};
+document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+document.getElementById('importFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { loadMap(JSON.parse(rd.result)); NET.pushFull(); }
+    catch(err){ toast('could not read that file'); }
+  };
+  rd.readAsText(f);
+};
+function clearWorld(){
+  chunks.forEach(c => {
+    Object.keys(c.blocks).forEach(k => removeBlockMesh(c, k));
+    const v = chunkGroups.get(c.id);
+    if (v) scene.remove(v.group);
+    chunkGroups.delete(c.id); blockMeshes.delete(c.id);
+  });
+  chunks = []; chunkSeq = 0; activeChunk = null; select(null);
+}
+function loadMap(d){
+  clearWorld();
+  if (d.version === 2){
+    (d.buses||[]).forEach((b,i) => { if (BUSES[i]) Object.assign(BUSES[i], b); });
+    buildBusUI(); syncBusGains();
+    bpm = d.bpm||120; swing = d.swing||0;
+    d.chunks.forEach(dc => {
+      const c = addChunk(dc.cx, dc.cz);
+      c.name = dc.name; c.color = dc.color || c.color;
+      c.blocks = dc.blocks || {};
+      Object.keys(c.blocks).forEach(k => {
+        const b = c.blocks[k];
+        if (b.sound.startsWith('smp') && !SAMPLES[+b.sound.slice(3)]) b._missingSample = true;
+        addBlockMesh(c, k, b);
+      });
+      setChunkLit(c, false);
+    });
+    toast('map loaded — ' + d.chunks.length + ' chunk(s)');
+  } else if (d.chunks && d.chunks[0] && d.chunks[0].blocks !== undefined && !d.version){
+    legacyLoad(d);
+  } else if (d.version === 1 || (d.chunks && Array.isArray(d.chunks))){
+    legacyLoad(d);
+  } else {
+    toast('unrecognised map format');
+  }
+  bpmIn.value = bpm; document.getElementById('bpmVal').textContent = bpm;
+  swIn.value = swing; document.getElementById('swingVal').textContent = swing+'%';
+  if (!chunks.length) addChunk(0,0);
+  pTarget.set(chunks[0].cx*CS + CS/2 + 0.5, 0, chunks[0].cz*CS + CS/2 + 0.5);
+}
+function legacyLoad(d){
+  // v1 came from the 2D prototype: 16x8 step grid per chunk.
+  // Rows become west→east chains, preserving column positions where possible.
+  bpm = d.bpm||120; swing = d.swing||0;
+  (d.chunks||[]).forEach((oc,i) => {
+    const c = addChunk(i % 2, Math.floor(i/2));
+    c.name = oc.name || c.name;
+    for (const k of Object.keys(oc.blocks||{})){
+      const [col,row] = k.split(',').map(Number);
+      const ob = oc.blocks[k];
+      const b = mkBlock(ob.sound||'kick');
+      b.pitch = ob.pitch||0; b.vol = ob.vol??0.8; b.pan = ob.pan||0; b.rev = ob.rev||0;
+      c.blocks[keyOf(col, row+3)] = b;
+      addBlockMesh(c, keyOf(col, row+3), b);
+    }
+    setChunkLit(c, false);
+  });
+  toast('legacy 2D map imported — grid rows became chains (timing model differs)');
+}
+
+// toast
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.style.opacity = 0, 2400);
+}
+toast('WASD to walk · step inside the chunk · space to play');
+
+/* ---------------- multiplayer ---------------- */
+const NET = (() => {
+  const qs = new URLSearchParams(location.search);
+  const myName = (qs.get('name') || 'player-' + Math.floor(Math.random()*900+100)).slice(0,16);
+  const url = qs.get('server') ||
+    (location.protocol.startsWith('http')
+      ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host
+      : 'ws://localhost:8787');
+  const statusEl = document.getElementById('netStatus');
+  const remotes = new Map();
+  let ws = null, myId = null, isOnline = false, updTimer = null;
+
+  function setStatus(txt, ok){ statusEl.textContent = txt; statusEl.style.color = ok ? '#5affc3' : '#8fa3b5'; }
+  function send(o){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function chunkById(id){ return chunks.find(c => c.id === id); }
+
+  function addChunkData(dc){
+    const c = { id:dc.id, name:dc.name, cx:dc.cx, cz:dc.cz, color:dc.color, blocks:dc.blocks || {} };
+    chunks.push(c);
+    buildChunkVisual(c);
+    Object.keys(c.blocks).forEach(k => addBlockMesh(c, k, c.blocks[k]));
+    setChunkLit(c, false);
+    return c;
+  }
+  function applyState(st){
+    clearWorld();
+    bpm = st.bpm || 120; swing = st.swing || 0;
+    bpmIn.value = bpm; document.getElementById('bpmVal').textContent = bpm;
+    swIn.value = swing; document.getElementById('swingVal').textContent = swing + '%';
+    (st.chunks || []).forEach(addChunkData);
+    if (!chunks.length) addChunk(0, 0);
+    activeChunk = null; updateActiveChunk(); rebuildPulses();
+  }
+  function b64ToAB(b64){
+    const bin = atob(b64), ab = new ArrayBuffer(bin.length), u = new Uint8Array(ab);
+    for (let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+    return ab;
+  }
+  function abToB64(ab){
+    const u = new Uint8Array(ab); let s = '';
+    for (let i=0;i<u.length;i+=0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i+0x8000));
+    return btoa(s);
+  }
+
+  // ---- remote avatars ----
+  function mkLabel(text, color){
+    const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+    const x = c.getContext('2d');
+    x.font = '28px Courier New'; x.textAlign = 'center';
+    x.fillStyle = color; x.shadowColor = color; x.shadowBlur = 12;
+    x.fillText(text, 128, 42);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(c), transparent:true }));
+    sp.scale.set(3.4, 0.85, 1);
+    return sp;
+  }
+  function addRemote(p){
+    if (p.id === myId || remotes.has(p.id)) return;
+    const grp = new THREE.Group();
+    const body = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({
+      color:new THREE.Color(p.color), emissive:new THREE.Color(p.color), emissiveIntensity:0.35 }));
+    body.scale.set(0.55, 1.15, 0.55); body.position.y = 0.58; grp.add(body);
+    const lb = mkLabel(p.name, p.color); lb.position.y = 2.0; grp.add(lb);
+    grp.position.set(p.x ?? 8, 0, p.z ?? 8);
+    scene.add(grp);
+    remotes.set(p.id, { grp, target:new THREE.Vector3(p.x ?? 8, 0, p.z ?? 8) });
+  }
+  function delRemote(id){
+    const r = remotes.get(id);
+    if (r){ scene.remove(r.grp); remotes.delete(id); }
+  }
+  (function lerpLoop(){
+    remotes.forEach(r => r.grp.position.lerp(r.target, 0.12));
+    requestAnimationFrame(lerpLoop);
+  })();
+
+  // ---- chat ----
+  const chatLog = document.getElementById('chatLog'), chatIn = document.getElementById('chatIn');
+  function esc(s){ return s.replace(/[<>&]/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[ch])); }
+  function chatMsg(name, msg, color){
+    const d = document.createElement('div');
+    d.innerHTML = '<b style="color:' + (color || '#7fdce8') + '">' + esc(name) + '</b> ' + esc(msg);
+    chatLog.appendChild(d);
+    while (chatLog.children.length > 9) chatLog.removeChild(chatLog.firstChild);
+    setTimeout(() => d.style.opacity = 0.35, 14000);
+  }
+  chatIn.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && chatIn.value.trim()){
+      send({ t:'chat', msg: chatIn.value.trim().slice(0,140) });
+      chatIn.value = ''; chatIn.blur();
+    }
+    e.stopPropagation();
+  });
+
+  // ---- message handlers ----
+  const H = {
+    init(m){
+      myId = m.id; isOnline = true;
+      applyState(m.state);
+      (m.samples || []).forEach(s => H.sample({ ...s, silent:true }));
+      m.players.forEach(addRemote);
+      setStatus('online as ' + myName + ' · ' + m.players.length + ' other(s) here', true);
+      chatMsg('*', 'connected — everything you build is shared live', '#5affc3');
+    },
+    join(m){ addRemote(m); chatMsg('*', m.name + ' joined the map', m.color); setStatus('online as ' + myName + ' · ' + remotes.size + ' other(s) here', true); },
+    leave(m){ delRemote(m.id); chatMsg('*', m.name + ' left', '#8fa3b5'); setStatus('online as ' + myName + ' · ' + remotes.size + ' other(s) here', true); },
+    pos(m){ const r = remotes.get(m.id); if (r) r.target.set(m.x, 0, m.z); else addRemote(m); },
+    place(m){
+      const c = chunkById(m.chunkId); if (!c || c.blocks[m.k]) return;
+      c.blocks[m.k] = m.block; addBlockMesh(c, m.k, m.block);
+      if (c === activeChunk) rebuildPulses();
+    },
+    del(m){
+      const c = chunkById(m.chunkId); if (!c || !c.blocks[m.k]) return;
+      delete c.blocks[m.k]; removeBlockMesh(c, m.k);
+      if (selected && selected.chunk === c && selected.k === m.k) select(null);
+      if (c === activeChunk) rebuildPulses();
+    },
+    upd(m){
+      const c = chunkById(m.chunkId); if (!c || !c.blocks[m.k]) return;
+      Object.assign(c.blocks[m.k], m.block);
+      refreshBlockMesh(c, m.k);
+      if (selected && selected.chunk === c && selected.k === m.k) syncEditor();
+    },
+    chunk(m){
+      if (chunkById(m.chunk.id)) return;
+      const c = addChunkData(m.chunk);
+      toast('chunk "' + c.name + '" generated');
+    },
+    clear(m){
+      const c = chunkById(m.chunkId); if (!c) return;
+      Object.keys(c.blocks).forEach(k => removeBlockMesh(c, k));
+      c.blocks = {};
+      if (selected && selected.chunk === c) select(null);
+      if (c === activeChunk) rebuildPulses();
+    },
+    set(m){
+      if (m.bpm){ bpm = m.bpm; bpmIn.value = bpm; document.getElementById('bpmVal').textContent = bpm; }
+      if (m.swing !== undefined){ swing = m.swing; swIn.value = swing; document.getElementById('swingVal').textContent = swing + '%'; }
+    },
+    async sample(m){
+      try {
+        audio();
+        const buf = await AC.decodeAudioData(b64ToAB(m.data));
+        addSample(m.name, buf, null, m.mime, true);
+        if (!m.silent) chatMsg('*', 'new shared sample: ' + m.name, '#ffe07a');
+      } catch(e){ console.warn('could not decode shared sample', m.name, e); }
+    },
+    load(m){ applyState(m.state); toast('a player loaded a new map'); },
+    chat(m){ chatMsg(m.name, m.msg, m.color); },
+  };
+
+  function connect(){
+    setStatus('connecting to ' + url + ' …', false);
+    try { ws = new WebSocket(url); } catch { offlineMode(); return; }
+    ws.onopen = () => send({ t:'hello', name: myName });
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } if (H[m.t]) H[m.t](m); };
+    ws.onclose = () => {
+      const was = isOnline;
+      offlineMode();
+      if (was) chatMsg('*', 'disconnected — retrying…', '#ff8aa0');
+      setTimeout(connect, 3000);
+    };
+    ws.onerror = () => {};
+  }
+  function offlineMode(){
+    isOnline = false;
+    [...remotes.keys()].forEach(delRemote);
+    setStatus('offline (solo) — run server.js and reload to jam with friends', false);
+  }
+  connect();
+
+  setInterval(() => { if (isOnline) send({ t:'pos', x:+pTarget.x.toFixed(2), z:+pTarget.z.toFixed(2) }); }, 120);
+
+  return {
+    online: () => isOnline,
+    place: (c, k, b) => isOnline && send({ t:'place', chunkId:c.id, k, block:b }),
+    del:   (c, k)    => isOnline && send({ t:'del', chunkId:c.id, k }),
+    updSel(){
+      if (!isOnline || !selected) return;
+      const { chunk, k } = selected;
+      clearTimeout(updTimer);
+      updTimer = setTimeout(() => {
+        const b = chunk.blocks[k];
+        if (b) send({ t:'upd', chunkId:chunk.id, k, block:b });
+      }, 130);
+    },
+    newChunk: (cx, cz) => send({ t:'chunk', cx, cz }),
+    clear: c => isOnline && send({ t:'clear', chunkId:c.id }),
+    set: o => isOnline && send({ t:'set', ...o }),
+    sample(name, raw, mime){
+      if (!isOnline) return;
+      if (raw.byteLength > 4*1024*1024) return toast('sample >4MB — kept local, not shared');
+      send({ t:'sample', name, mime, data: abToB64(raw) });
+    },
+    pushFull(){
+      if (!isOnline) return;
+      send({ t:'load', state:{ bpm, swing,
+        chunks: chunks.map(c => ({ id:c.id, name:c.name, cx:c.cx, cz:c.cz, color:c.color, blocks:c.blocks })) } });
+    },
+  };
+})();
+
+</script>
+</body>
+</html>
