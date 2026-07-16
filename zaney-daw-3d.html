@@ -142,6 +142,7 @@ document.getElementById('enterBtn').onclick = function(){
 
   <div id="transport">
     <button id="playBtn">&#9654; PLAY</button>
+    <button id="metBtn" title="4/4 metronome click">MET</button>
     <button id="clearBtn" title="clear active chunk">CLR</button>
   </div>
   <div class="row" style="margin-top:6px">
@@ -305,7 +306,6 @@ let bpm = 120, swing = 0, playing = false;
 // A connected component of blocks (4-neighbour adjacency) is a sequence.
 // A pulse starts at the component's root, moves to unvisited neighbours each
 // step; several unvisited neighbours = the pulse SPLITS into parallel branches.
-// When every branch dies, the pulse restarts at the root → the loop.
 function components(blocks){
   const keys = Object.keys(blocks), seen = new Set(), comps = [];
   for (const k of keys){
@@ -329,35 +329,48 @@ function rootOf(comp){
     return (az-bz) || (ax-bx);
   })[0];
 }
-function mkPulseState(blocks){
-  return components(blocks).map(comp => ({
-    set: new Set(comp), root: rootOf(comp),
-    visited: null, heads: null,
-  }));
-}
-function stepPulses(state, blocks){
-  const trig = [];
-  for (const c of state){
-    if (!c.heads){ c.visited = new Set([c.root]); c.heads = [c.root]; trig.push(c.root); continue; }
+// Each component's pulse walk is PRECOMPUTED into a schedule, and its loop
+// length is rounded UP to whole beats (multiples of 4 steps). All components
+// share the global step clock, so every sequence stays locked to the 4/4 bar:
+// a single block plays on the beat, a 4-chain loops seamlessly every beat,
+// a 5-chain plays 5 steps then rests until the next 2-beat boundary.
+function componentSchedule(blocks, comp){
+  const root = rootOf(comp);
+  const set = new Set(comp);
+  const visited = new Set([root]);
+  let heads = [root];
+  const sched = [[root]];
+  while (true){
     const next = [];
-    for (const h of c.heads){
+    for (const h of heads){
       const [x,z] = h.split(',').map(Number);
       for (const [dx,dz] of [[1,0],[0,1],[-1,0],[0,-1]]){
         const nk = keyOf(x+dx, z+dz);
-        if (c.set.has(nk) && blocks[nk] && !c.visited.has(nk)){
-          c.visited.add(nk); next.push(nk);
-        }
+        if (set.has(nk) && blocks[nk] && !visited.has(nk)){ visited.add(nk); next.push(nk); }
       }
     }
-    if (next.length){ c.heads = next; trig.push(...next); }
-    else { c.visited = new Set([c.root]); c.heads = [c.root]; trig.push(c.root); }
+    if (!next.length) break;
+    sched.push(next);
+    heads = next;
   }
-  return trig;
+  const cycle = Math.max(4, Math.ceil(sched.length / 4) * 4);   // quantise to 4/4 beats
+  return { sched, cycle };
+}
+function mkPulseState(blocks){
+  return components(blocks).map(comp => componentSchedule(blocks, comp));
+}
+function cellsAtStep(state, step){
+  const out = [];
+  for (const c of state){
+    const pos = step % c.cycle;
+    if (pos < c.sched.length) out.push(...c.sched[pos]);
+  }
+  return out;
 }
 // pure simulation for offline stem rendering
 function simulateSteps(blocks, n){
   const st = mkPulseState(blocks), out = [];
-  for (let i=0;i<n;i++) out.push(stepPulses(st, blocks));
+  for (let i=0;i<n;i++) out.push(cellsAtStep(st, i));
   return out;
 }
 let pulseState = null;
@@ -589,13 +602,24 @@ function trigger(G, t, b, stepDur){
 
 // ---------------- transport / scheduler ----------------
 let nextNoteTime = 0, schedStep = 0;
+var metronome = false;
+function tickMetronome(t, accent){
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.value = accent ? 1568 : 1046;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(accent ? 0.5 : 0.28, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  o.connect(g); g.connect(LIVE.master);
+  o.start(t); o.stop(t + 0.07);
+}
 const flashQueue = [];
 function scheduler(){
   if (!playing) return;
   const stepDur = 60 / bpm / 4;
   while (nextNoteTime < AC.currentTime + 0.12){
+    if (metronome && schedStep % 4 === 0) tickMetronome(nextNoteTime, schedStep % 16 === 0);
     if (activeChunk && pulseState){
-      const cells = stepPulses(pulseState, activeChunk.blocks);
+      const cells = cellsAtStep(pulseState, schedStep);
       for (const k of cells){
         const b = activeChunk.blocks[k];
         if (b) trigger(LIVE, nextNoteTime, b, stepDur);
@@ -955,6 +979,11 @@ document.getElementById('clearBtn').onclick = () => {
   Object.keys(activeChunk.blocks).forEach(k => removeBlockMesh(activeChunk, k));
   activeChunk.blocks = {}; select(null); rebuildPulses();
   toast('chunk "' + activeChunk.name + '" cleared');
+};
+document.getElementById('metBtn').onclick = function(){
+  metronome = !metronome;
+  this.classList.toggle('active', metronome);
+  toast(metronome ? 'metronome on — 4/4 click, accent on the 1' : 'metronome off');
 };
 const bpmIn = document.getElementById('bpm');
 bpmIn.oninput = () => { bpm = +bpmIn.value; document.getElementById('bpmVal').textContent = bpm; };
