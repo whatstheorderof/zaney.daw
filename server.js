@@ -177,6 +177,16 @@ wss.on('connection', ws => {
           console.log('  ' + p.name + ' loaded a map (' + state.chunks.length + ' chunks)');
         }
         break;
+      case 'rack': {
+        const c = chunkById(m.chunkId);
+        if (c && Array.isArray(m.rack)){
+          c.rack = m.rack;
+          c.bars = [1, 2, 4, 8].includes(m.bars) ? m.bars : 4;
+          bcast(m, ws);
+          markDirty();
+        }
+        break;
+      }
       case 'chat':
         bcast({ t: 'chat', name: p.name, color: p.color, msg: String(m.msg || '').slice(0, 140) });
         break;

@@ -103,6 +103,31 @@
   #themePick button { flex:1; padding:5px 2px; font-size:10px; }
   #packTabs { display:flex; gap:3px; margin-bottom:6px; }
   #packTabs button { flex:1; padding:5px 2px; font-size:10px; letter-spacing:0; }
+  #rack { display:none; position:absolute; left:300px; right:0; bottom:0; height:46%; z-index:18;
+    background:rgba(6,9,14,0.96); border-top:1px solid #1d3a46; flex-direction:column; }
+  #rackHead { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid #14303a; }
+  #rackTitle { font-size:12px; color:#4df3ff; letter-spacing:1px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #barsPick { display:flex; gap:3px; align-items:center; }
+  #barsPick .rlbl { font-size:10px; color:#7fdce8; margin-right:2px; }
+  #barsPick button { padding:4px 10px; font-size:11px; }
+  #rackAdd { font-size:11px; }
+  #rackClose { font-size:14px; padding:4px 10px; }
+  #rackBody { flex:1; overflow:auto; padding:10px 12px; }
+  .rrow { display:flex; align-items:center; margin-bottom:4px; }
+  .rslot { display:flex; align-items:center; gap:6px; width:150px; min-width:150px; padding:6px 8px;
+    background:#0d1420; border:1px solid #1d3a46; border-radius:4px; margin-right:10px; cursor:pointer; }
+  .rslot.dropme { border-color:#4df3ff; box-shadow:0 0 10px rgba(77,243,255,0.3) inset; }
+  .rslot.muted { opacity:0.45; }
+  .rslot .rname { font-size:11px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rslot .rmute { color:#7fdce8; font-size:10px; }
+  .rslot .rdel { color:#5a6b7a; font-size:14px; padding:0 2px; }
+  .rslot .rdel:hover { color:#ff4d6d; }
+  .rgrid { display:flex; gap:2px; }
+  .rcell { width:20px; height:26px; min-width:20px; border-radius:3px; background:#141c2a; border:1px solid #1d2a3a; cursor:pointer; }
+  .rcell.alt { background:#0e1522; }
+  .rcell.on { border-color:rgba(255,255,255,0.35); }
+  .rcell.ph { outline:1px solid #4df3ff; box-shadow:0 0 8px rgba(77,243,255,0.5); }
+  .rackHint { font-size:10px; color:#546b7a; padding:6px 12px; border-top:1px solid #14303a; }
 </style>
 </head>
 <body>
@@ -126,6 +151,7 @@
     <div class="srow"><b>chain blocks</b> side by side to make a sequence · <b>forks</b> in the chain play in parallel</div>
     <div class="srow"><b>right-click</b> deletes · <b>shift+scroll</b> transposes the selected block</div>
     <div class="srow"><b>step inside a chunk</b> to make it the live song — others go silent</div>
+    <div class="srow"><b>R</b> opens the channel rack — an FL-style step sequencer per chunk, with its own bar length</div>
     <div class="srow"><b>space</b> plays / stops · drop your own audio files anywhere</div>
     <button id="enterBtn">&#9654; ENTER THE WORLD</button>
   </div>
@@ -154,6 +180,7 @@ document.getElementById('enterBtn').onclick = function(){
   <div id="transport">
     <button id="playBtn">&#9654; PLAY</button>
     <button id="metBtn" title="4/4 metronome click">MET</button>
+    <button id="rackBtn" title="channel rack (R)">RACK</button>
     <button id="clearBtn" title="clear active chunk">CLR</button>
   </div>
   <div class="row" style="margin-top:6px">
@@ -212,6 +239,20 @@ document.getElementById('enterBtn').onclick = function(){
 <div id="chat">
   <div id="chatLog"></div>
   <input id="chatIn" placeholder="chat with your homies… (enter)" maxlength="140">
+</div>
+<div id="rack">
+  <div id="rackHead">
+    <span id="rackTitle">CHANNEL RACK</span>
+    <div id="barsPick">
+      <span class="rlbl">BARS</span>
+      <button data-b="1">1</button><button data-b="2">2</button>
+      <button data-b="4" class="active">4</button><button data-b="8">8</button>
+    </div>
+    <button id="rackAdd">+ CHANNEL</button>
+    <button id="rackClose">&times;</button>
+  </div>
+  <div id="rackBody"></div>
+  <div class="rackHint">drag a pad from SOUND PACKS onto a channel name to swap its sound &nbsp;·&nbsp; click / drag paints steps &nbsp;·&nbsp; right-click erases &nbsp;·&nbsp; 4 steps = 1 beat</div>
 </div>
 <div id="toast"></div>
 
@@ -633,6 +674,15 @@ function scheduler(){
   const stepDur = 60 / bpm / 4;
   while (nextNoteTime < AC.currentTime + 0.12){
     if (metronome && schedStep % 4 === 0) tickMetronome(nextNoteTime, schedStep % 16 === 0);
+    if (activeChunk){
+      ensureRack(activeChunk);
+      const rackPos = schedStep % (activeChunk.bars * 16);
+      for (const ch of activeChunk.rack){
+        if (!ch.mute && ch.steps[rackPos]) trigger(LIVE, nextNoteTime, mkBlock(ch.sound), stepDur);
+      }
+      rackFlash.push({ when: nextNoteTime, pos: rackPos });
+      if (rackFlash.length > 128) rackFlash.splice(0, rackFlash.length - 128);
+    }
     if (activeChunk && pulseState){
       const cells = cellsAtStep(pulseState, schedStep);
       for (const k of cells){
@@ -877,6 +927,7 @@ addEventListener('keydown', e => {
     if (t.blur) t.blur();                            // WASD / space etc: release the slider
   }
   if (e.code === 'Space'){ e.preventDefault(); togglePlay(); return; }
+  if (e.key === 'r' || e.key === 'R'){ toggleRack(); return; }
   if (e.key === 'q' || e.key === 'Q') camYaw += Math.PI/4;
   if (e.key === 'e' || e.key === 'E') camYaw -= Math.PI/4;
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected){
@@ -921,6 +972,7 @@ function updateActiveChunk(){
         ? 'entered "' + activeChunk.name + '" — this chunk is live, others are silent'
         : 'entered "' + activeChunk.name + '" — empty chunk: drag sounds in to start a song');
     }
+    if (rackOpen) renderRack();
   }
 }
 chunks.forEach(ch => setChunkLit(ch, false));
@@ -978,6 +1030,18 @@ function loop(){
       m.material.emissiveIntensity = 0.12; m.scale.x = 0.82; m.scale.z = 0.82;
     }
   }));
+
+  // rack playhead
+  if (AC){
+    while (rackFlash.length && rackFlash[0].when <= AC.currentTime) rackLastPos = rackFlash.shift().pos;
+  }
+  if (rackOpen && rackStepEls && rackLastPos !== rackShownPos){
+    for (const cells of rackStepEls){
+      if (rackShownPos >= 0 && cells[rackShownPos]) cells[rackShownPos].classList.remove('ph');
+      if (rackLastPos >= 0 && cells[rackLastPos]) cells[rackLastPos].classList.add('ph');
+    }
+    rackShownPos = rackLastPos;
+  }
 
   // selection marker
   if (selected && selected.chunk.blocks[selected.k]){
@@ -1247,7 +1311,8 @@ function download(blob, name){
   a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
-async function renderStem(blocks, busFilter, bars){
+async function renderStem(chunk, busFilter, bars){
+  const blocks = chunk.blocks;
   const steps = bars * 16, stepDur = 60/bpm/4;
   // pre-compute swung step times
   const times = []; let t = 0.05;
@@ -1268,6 +1333,17 @@ async function renderStem(blocks, busFilter, bars){
       trigger(G, times[s], b, stepDur);
     }
   }
+  const rackArr = chunk.rack || [];
+  const loopLen = (chunk.bars || 4) * 16;
+  for (let s=0;s<steps;s++){
+    const pos = s % loopLen;
+    for (const ch of rackArr){
+      if (ch.mute || !ch.steps || !ch.steps[pos]) continue;
+      const rb = mkBlock(ch.sound);
+      if (busFilter !== null && rb.bus !== busFilter) continue;
+      trigger(G, times[s], rb, stepDur);
+    }
+  }
   return octx.startRendering();
 }
 document.getElementById('exBars').oninput = e => document.getElementById('vBars').textContent = e.target.value;
@@ -1279,11 +1355,12 @@ document.getElementById('stemsBtn').onclick = async function(){
   const name = activeChunk.name.replace(/\s+/g,'-');
   this.disabled = true; this.textContent = 'RENDERING…';
   try {
-    const mix = await renderStem(activeChunk.blocks, null, bars);
+    const mix = await renderStem(activeChunk, null, bars);
     download(encodeWav(mix), 'zaney-' + name + '-mix.wav');
     const used = new Set(Object.values(activeChunk.blocks).map(b => b.bus));
+    ensureRack(activeChunk).rack.forEach(ch => { if (Object.keys(ch.steps || {}).length && !ch.mute) used.add(mkBlock(ch.sound).bus); });
     for (const i of used){
-      const stem = await renderStem(activeChunk.blocks, i, bars);
+      const stem = await renderStem(activeChunk, i, bars);
       download(encodeWav(stem), 'zaney-' + name + '-' + BUSES[i].name.toLowerCase() + '.wav');
     }
     toast('exported mix + ' + used.size + ' stem(s) · ' + bars + ' bars @ ' + bpm + ' bpm');
@@ -1297,7 +1374,7 @@ document.getElementById('exportBtn').onclick = () => {
     version: 2, bpm, swing, theme: curTheme,
     buses: BUSES.map(b => ({ vol:b.vol, mute:b.mute, solo:b.solo })),
     sampleNames: SAMPLES.map(s => s.name),
-    chunks: chunks.map(c => ({ name:c.name, cx:c.cx, cz:c.cz, color:c.color, blocks:c.blocks })),
+    chunks: chunks.map(c => ({ name:c.name, cx:c.cx, cz:c.cz, color:c.color, bars:c.bars, rack:c.rack, blocks:c.blocks })),
   };
   download(new Blob([JSON.stringify(data)], { type:'application/json' }), 'zaney-map.json');
   toast('map saved (samples are not embedded — re-drop audio after loading)');
@@ -1331,6 +1408,8 @@ function loadMap(d){
       const c = addChunk(dc.cx, dc.cz);
       c.name = dc.name; c.color = dc.color || c.color;
       c.blocks = dc.blocks || {};
+      c.bars = dc.bars || 4;
+      if (dc.rack) c.rack = dc.rack;
       Object.keys(c.blocks).forEach(k => {
         const b = c.blocks[k];
         if (b.sound.startsWith('smp') && !SAMPLES[+b.sound.slice(3)]) b._missingSample = true;
@@ -1399,7 +1478,7 @@ const NET = (() => {
   function chunkById(id){ return chunks.find(c => c.id === id); }
 
   function addChunkData(dc){
-    const c = { id:dc.id, name:dc.name, cx:dc.cx, cz:dc.cz, color:dc.color, blocks:dc.blocks || {} };
+    const c = { id:dc.id, name:dc.name, cx:dc.cx, cz:dc.cz, color:dc.color, bars:dc.bars || 4, rack:dc.rack, blocks:dc.blocks || {} };
     chunks.push(c);
     buildChunkVisual(c);
     Object.keys(c.blocks).forEach(k => addBlockMesh(c, k, c.blocks[k]));
@@ -1530,6 +1609,11 @@ const NET = (() => {
       } catch(e){ console.warn('could not decode shared sample', m.name, e); }
     },
     load(m){ applyState(m.state); toast('a player loaded a new map'); },
+    rack(m){
+      const c = chunkById(m.chunkId); if (!c) return;
+      c.rack = m.rack; c.bars = m.bars || 4;
+      if (c === activeChunk && rackOpen) renderRack();
+    },
     chat(m){ chatMsg(m.name, m.msg, m.color); },
     'voice-members'(m){ if (window.VOICE) VOICE.onMembers(m); },
     'voice-join'(m){ chatMsg('*', m.name + ' joined voice chat', '#ffd84d'); if (window.VOICE) VOICE.onJoin(m); },
@@ -1576,6 +1660,7 @@ const NET = (() => {
     },
     newChunk: (cx, cz) => send({ t:'chunk', cx, cz }),
     clear: c => isOnline && send({ t:'clear', chunkId:c.id }),
+    rack: c => isOnline && send({ t:'rack', chunkId:c.id, bars:c.bars, rack:c.rack }),
     set: o => isOnline && send({ t:'set', ...o }),
     sample(name, raw, mime){
       if (!isOnline) return;
@@ -1585,7 +1670,7 @@ const NET = (() => {
     pushFull(){
       if (!isOnline) return;
       send({ t:'load', state:{ bpm, swing,
-        chunks: chunks.map(c => ({ id:c.id, name:c.name, cx:c.cx, cz:c.cz, color:c.color, blocks:c.blocks })) } });
+        chunks: chunks.map(c => ({ id:c.id, name:c.name, cx:c.cx, cz:c.cz, color:c.color, bars:c.bars, rack:c.rack, blocks:c.blocks })) } });
     },
   };
 })();
@@ -1734,6 +1819,127 @@ function setTheme(name){
 document.querySelectorAll('#themePick button').forEach(b => {
   b.onclick = () => { setTheme(b.dataset.th); toast('backdrop: ' + b.dataset.th); };
 });
+
+
+/* ---------------- FL-style channel rack ---------------- */
+var rackOpen = false;
+var rackStepEls = null;
+var rackFlash = [];
+var rackLastPos = -1, rackShownPos = -1;
+var rackPaint = null;
+var rackSyncTimer = null;
+
+function ensureRack(c){
+  if (!c.bars || ![1,2,4,8].includes(c.bars)) c.bars = 4;
+  if (!c.rack) c.rack = [
+    { sound:'kick',  steps:{}, mute:false },
+    { sound:'snare', steps:{}, mute:false },
+    { sound:'hat',   steps:{}, mute:false },
+    { sound:'clap',  steps:{}, mute:false },
+  ];
+  return c;
+}
+function rackChanged(){
+  clearTimeout(rackSyncTimer);
+  rackSyncTimer = setTimeout(() => {
+    if (typeof NET !== 'undefined' && NET.rack && activeChunk) NET.rack(activeChunk);
+  }, 250);
+}
+function setRackStep(ch, i, val, cell, def){
+  if (val) ch.steps[i] = true; else delete ch.steps[i];
+  cell.classList.toggle('on', !!val);
+  cell.style.background = val ? def.color : '';
+  rackChanged();
+}
+function renderRack(){
+  const rackBody = document.getElementById('rackBody');
+  rackStepEls = null; rackShownPos = -1;
+  if (!activeChunk){
+    rackBody.innerHTML = '<div class="sub" style="padding:14px">step inside a chunk to edit its rack</div>';
+    document.getElementById('rackTitle').textContent = 'CHANNEL RACK';
+    return;
+  }
+  ensureRack(activeChunk);
+  document.getElementById('rackTitle').textContent =
+    'CHANNEL RACK · ' + activeChunk.name.toUpperCase() + ' · ' +
+    activeChunk.bars + ' BAR' + (activeChunk.bars > 1 ? 'S' : '') + ' @ 4/4';
+  document.querySelectorAll('#barsPick button').forEach(b =>
+    b.classList.toggle('active', +b.dataset.b === activeChunk.bars));
+  rackBody.innerHTML = '';
+  const els = [];
+  const total = activeChunk.bars * 16;
+  activeChunk.rack.forEach((ch, ri) => {
+    const row = document.createElement('div'); row.className = 'rrow';
+    const def = soundDef(ch.sound);
+    const slot = document.createElement('div'); slot.className = 'rslot' + (ch.mute ? ' muted' : '');
+    slot.innerHTML =
+      '<span class="rmute" title="mute channel">' + (ch.mute ? '&#9675;' : '&#9679;') + '</span>' +
+      '<span class="swatch" style="background:' + def.color + '; box-shadow:0 0 6px ' + def.color + '"></span>' +
+      '<span class="rname">' + def.name + '</span>' +
+      '<span class="rdel" title="remove channel">&times;</span>';
+    slot.title = 'drag a sound pad here to swap the sound · click to audition';
+    slot.onclick = e => {
+      const cls = e.target && e.target.classList;
+      if (cls && (cls.contains('rdel') || cls.contains('rmute'))){
+        if (cls.contains('rdel')){ activeChunk.rack.splice(ri, 1); renderRack(); rackChanged(); }
+        else { ch.mute = !ch.mute; renderRack(); rackChanged(); }
+        return;
+      }
+      audio(); if (AC.state === 'suspended') AC.resume();
+      if (!playing) trigger(LIVE, AC.currentTime, mkBlock(ch.sound), 60/bpm/4);
+    };
+    slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('dropme'); });
+    slot.addEventListener('dragleave', () => slot.classList.remove('dropme'));
+    slot.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation(); slot.classList.remove('dropme');
+      if (draggingSound){ ch.sound = draggingSound; draggingSound = null; renderRack(); rackChanged(); }
+    });
+    row.appendChild(slot);
+    const grid = document.createElement('div'); grid.className = 'rgrid';
+    const cells = [];
+    for (let i = 0; i < total; i++){
+      const cell = document.createElement('div');
+      cell.className = 'rcell' + (Math.floor(i/4) % 2 ? ' alt' : '') + (ch.steps[i] ? ' on' : '');
+      if (ch.steps[i]) cell.style.background = def.color;
+      cell.onmousedown = e => {
+        e.preventDefault();
+        const val = e.button === 2 ? false : !ch.steps[i];
+        rackPaint = { ri, val };
+        setRackStep(ch, i, val, cell, def);
+        if (val && !playing){ audio(); if (AC.state === 'suspended') AC.resume(); trigger(LIVE, AC.currentTime, mkBlock(ch.sound), 60/bpm/4); }
+      };
+      cell.onmouseenter = () => { if (rackPaint && rackPaint.ri === ri) setRackStep(ch, i, rackPaint.val, cell, def); };
+      cell.oncontextmenu = e => e.preventDefault();
+      grid.appendChild(cell); cells.push(cell);
+    }
+    row.appendChild(grid);
+    rackBody.appendChild(row);
+    els.push(cells);
+  });
+  rackStepEls = els;
+}
+function toggleRack(force){
+  rackOpen = force !== undefined ? force : !rackOpen;
+  document.getElementById('rack').style.display = rackOpen ? 'flex' : 'none';
+  document.getElementById('rackBtn').classList.toggle('active', rackOpen);
+  if (rackOpen) renderRack();
+}
+document.getElementById('rackBtn').onclick = () => toggleRack();
+document.getElementById('rackClose').onclick = () => toggleRack(false);
+document.getElementById('rackAdd').onclick = () => {
+  if (!activeChunk) return toast('step inside a chunk first');
+  ensureRack(activeChunk).rack.push({ sound: curSound, steps:{}, mute:false });
+  renderRack(); rackChanged();
+};
+document.querySelectorAll('#barsPick button').forEach(b => {
+  b.onclick = () => {
+    if (!activeChunk) return toast('step inside a chunk first');
+    ensureRack(activeChunk).bars = +b.dataset.b;
+    renderRack(); rackChanged();
+    toast(b.dataset.b + '-bar loop @ 4/4 — ' + (+b.dataset.b * 16) + ' steps');
+  };
+});
+addEventListener('mouseup', () => rackPaint = null);
 
 </script>
 </body>
