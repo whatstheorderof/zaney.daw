@@ -956,6 +956,7 @@ function updateActiveChunk(){
         : 'entered "' + activeChunk.name + '" — empty chunk: drag sounds in to start a song');
     }
     if (rackOpen) renderRack();
+    if (rackVisGroups && activeChunk && !rackVisGroups.has(activeChunk.id)) rebuildRackVisual(activeChunk);
   }
 }
 chunks.forEach(ch => setChunkLit(ch, false));
@@ -1021,6 +1022,32 @@ function loop(){
       if (rackLastPos >= 0 && cells[rackLastPos]) cells[rackLastPos].classList.add('ph');
     }
     rackShownPos = rackLastPos;
+  }
+
+  // world playhead: the bar flows across the chunk, one row per bar
+  if (playing && activeChunk && rackLastPos >= 0 && rackTile){
+    const totalSteps = (activeChunk.bars || 4) * 16;
+    const wpos = rackLastPos % totalSteps;
+    const wtx = activeChunk.cx*CS + (wpos % CS) + 0.5;
+    const wtz = activeChunk.cz*CS + Math.floor(wpos / CS) + 0.5;
+    rackTile.visible = true; rackBeam.visible = true;
+    rackTile.position.x += (wtx - rackTile.position.x) * 0.4;
+    rackTile.position.z += (wtz - rackTile.position.z) * 0.4;
+    rackBeam.position.set(rackTile.position.x, 1.65, rackTile.position.z);
+    const rv = rackVisGroups && rackVisGroups.get(activeChunk.id);
+    if (rv && rackWorldPos !== wpos){
+      const ms = rv.index.get(wpos);
+      if (ms) ms.forEach(mm => { mm.userData.pulse = 1; rackPulsing.push(mm); });
+      rackWorldPos = wpos;
+    }
+  } else if (rackTile){ rackTile.visible = false; rackBeam.visible = false; }
+  if (rackPulsing && rackPulsing.length){
+    for (let i = rackPulsing.length - 1; i >= 0; i--){
+      const mm = rackPulsing[i];
+      mm.userData.pulse *= 0.85;
+      mm.scale.y = 0.09 + mm.userData.pulse * 0.7;
+      if (mm.userData.pulse < 0.02){ mm.scale.y = 0.09; rackPulsing.splice(i, 1); }
+    }
   }
 
   // selection marker
@@ -1370,6 +1397,7 @@ function clearWorld(){
     if (v) scene.remove(v.group);
     chunkGroups.delete(c.id); blockMeshes.delete(c.id);
   });
+  if (typeof rackVisGroups !== 'undefined' && rackVisGroups){ rackVisGroups.forEach(v => scene.remove(v.group)); rackVisGroups.clear(); }
   chunks = []; chunkSeq = 0; activeChunk = null; select(null);
 }
 function loadMap(d){
@@ -1403,6 +1431,7 @@ function loadMap(d){
   swIn.value = swing; document.getElementById('swingVal').textContent = swing+'%';
   if (d.theme && THEMES[d.theme]) setTheme(d.theme);
   if (!chunks.length) addChunk(0,0);
+  chunks.forEach(c2 => rebuildRackVisual(c2));
   pTarget.set(chunks[0].cx*CS + CS/2 + 0.5, 0, chunks[0].cz*CS + CS/2 + 0.5);
 }
 function legacyLoad(d){
@@ -1501,6 +1530,7 @@ function ensureRack(c){
   return c;
 }
 function rackChanged(){
+  if (activeChunk) rebuildRackVisual(activeChunk);
   clearTimeout(rackSyncTimer);
   rackSyncTimer = setTimeout(() => {
     if (typeof NET !== 'undefined' && NET.rack && activeChunk) NET.rack(activeChunk);
@@ -1601,6 +1631,55 @@ document.querySelectorAll('#barsPick button').forEach(b => {
   };
 });
 addEventListener('mouseup', () => rackPaint = null);
+
+
+/* ---------------- rack made physical: steps as slabs on the terrain ----------------
+   Layout mirrors time: within a bar the beat flows west→east across 16 cells,
+   each new bar advances one row south. Stacked slabs = several channels on the
+   same step. A glowing tile + beam sweeps this path while playing. */
+var rackVisGroups = new Map();   // chunkId -> { group, index: Map(stepPos -> meshes) }
+var rackPulsing = [];
+var rackWorldPos = -1;
+var rackTile = new THREE.Mesh(new THREE.PlaneGeometry(0.98, 0.98),
+  new THREE.MeshBasicMaterial({ color: 0x4df3ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+rackTile.rotation.x = -Math.PI/2; rackTile.position.y = 0.045; rackTile.visible = false;
+scene.add(rackTile);
+var rackBeam = new THREE.Mesh(boxGeo,
+  new THREE.MeshBasicMaterial({ color: 0x4df3ff, transparent: true, opacity: 0.2 }));
+rackBeam.scale.set(0.16, 3.2, 0.98); rackBeam.visible = false;
+scene.add(rackBeam);
+
+function removeRackVisual(id){
+  const v = rackVisGroups.get(id);
+  if (v){ scene.remove(v.group); rackVisGroups.delete(id); }
+}
+function rebuildRackVisual(c){
+  if (!c) return;
+  ensureRack(c);
+  removeRackVisual(c.id);
+  const group = new THREE.Group();
+  const index = new Map();
+  const total = c.bars * 16;
+  c.rack.forEach((ch, ci) => {
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(soundDef(ch.sound).color),
+      transparent: true, opacity: ch.mute ? 0.15 : 0.7 });
+    for (const k of Object.keys(ch.steps || {})){
+      const pos = +k;
+      if (pos < 0 || pos >= total) continue;
+      const x = pos % CS, z = Math.floor(pos / CS);
+      const m = new THREE.Mesh(boxGeo, mat);
+      m.scale.set(0.66, 0.09, 0.66);
+      m.position.set(c.cx*CS + x + 0.5, 0.11 + ci*0.13, c.cz*CS + z + 0.5);
+      group.add(m);
+      if (!index.has(pos)) index.set(pos, []);
+      index.get(pos).push(m);
+    }
+  });
+  scene.add(group);
+  rackVisGroups.set(c.id, { group, index });
+}
+chunks.forEach(rebuildRackVisual);
 
 </script>
 </body>
